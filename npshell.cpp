@@ -28,8 +28,6 @@ int main(int argc, char *argv[]) {
  
   // set $PATH to bin/ ./ initially
   callSetenv("PATH","bin:.");
-  callPrintenv("PATH");
-  
   cout <<"% ";  
  
   while(getline(cin,input)){
@@ -37,33 +35,47 @@ int main(int argc, char *argv[]) {
     while (ss >> aWord) {
       commandVec.push_back(aWord);
     }
-    // Ready to handle the command. 
-    fork_pid = fork();
+    // We want to check if the command is the three built-in command
+    if(commandVec[0]=="exit"){
+      break ;
+    }else if(commandVec[0]=="printenv"){
+      if(commandVec.size()==2){
+        callPrintenv(commandVec[1]);     
+      } 
+    }else if(commandVec[0]=="setenv"){
+      if(commandVec.size()==3){
+        callSetenv(commandVec[1],commandVec[2]);    
+      }
+    }else{
+      // Not the three built-in command
+      // Ready to handle the command. 
+      fork_pid = fork();
 
-    if(fork_pid ==-1){ //fork Error
-      cout <<"fork error\n" ;
-      exit(-1);      
-    }else if(fork_pid ==0){ // Child
-      // handle execvp argument
-      int arg_index =0;
-      char* arg[MAX_LENGTH] ;
-      for(int i=0;i<commandVec.size();i++){
-        arg[i] = strdup(commandVec[i].c_str());
-        arg_index++;
-      }
+      if(fork_pid ==-1){ //fork Error
+        cout <<"fork error\n" ;
+        exit(-1);      
+      }else if(fork_pid ==0){ // Child
+        // handle execvp argument
+        int arg_index =0;
+        char* arg[MAX_LENGTH] ;
+        for(int i=0;i<commandVec.size();i++){
+          arg[i] = strdup(commandVec[i].c_str());
+          arg_index++;
+        }
       
-      // Ready to execvp
-      cout <<"[Child] ready to execvp\n";
-      if(execvp(arg[0],arg)==-1){ // execvp fail
-        cout <<"Unknown command: ["<<arg[0]<<"].\n";
-        exit(10);
-      }
+        // Ready to execvp
+        cout <<"[Child] ready to execvp\n";
+        if(execvp(arg[0],arg)==-1){ // execvp fail
+          cout <<"Unknown command: ["<<arg[0]<<"].\n";
+          exit(10);
+        }
   
-    }else if(fork_pid >0){ //Parent
-      cout <<"[Parent] child's pid:"<< fork_pid <<"\n" ;
-      cout <<"[Parent] ready to wait child\n";
-      child_done_pid = wait(&child_done_status);
-      cout <<"[Parent] had waited child and child_pid,status:"<<child_done_pid<<" "<<child_done_status<<"\n";
+      }else if(fork_pid >0){ //Parent
+        cout <<"[Parent] child's pid:"<< fork_pid <<"\n" ;
+        cout <<"[Parent] ready to wait child\n";
+        child_done_pid = wait(&child_done_status);
+        cout <<"[Parent] had waited child and child_pid,status:"<<child_done_pid<<" "<<child_done_status<<"\n";
+      }
     }
 
     //one term command is done -> Initialize it.
