@@ -99,16 +99,12 @@ void singleProcess(vector<string> commandVec){
         	arg[i] = strdup(commandVec[i].c_str());
       	}	
    		// Ready to execvp
-        cout <<"[Child] ready to execvp\n";
        	if(execvp(arg[0],arg)==-1){ // execvp fail
-   			cout <<"Unknown command: ["<<arg[0]<<"].\n";
+   			cerr <<"Unknown command: ["<<arg[0]<<"].\n";
        		exit(10);
         }	
 	}else if(fork_pid >0){ //Parent
-   		cout <<"[Parent] child's pid:"<< fork_pid <<"\n" ;
-		cout <<"[Parent] ready to wait child\n";
 		child_done_pid = wait(&child_done_status);	
-		cout <<"[Parent] had waited child and child_pid,status:"<<child_done_pid<<" "<<child_done_status<<"\n";
 	}
 
 }
@@ -118,7 +114,7 @@ void multiProcess(vector<string> commandVec,int process_count){
 	int process_index =0;
 	int process_cmd_index=0;
 	pid_t child_done_pid;
-	pid_t fork_pid;
+	pid_t fork_pid[2];
 	int child_done_status;
 	char* arg[process_count][256]={NULL} ;
 
@@ -136,26 +132,52 @@ void multiProcess(vector<string> commandVec,int process_count){
 			process_cmd_index ++ ;
 		}		
 	}
-
 	// All argument of process is handled.
-	for(int process_index=0; process_index<process_count ; process_index++){
-		fork_pid = fork();
-		if(fork_pid ==-1){
-			cout <<"multiProcess(...): fork error times:"<<process_index<<"\n" ;
-		}else if(fork_pid ==0){ //Child			
-   			// Ready to execvp
-    	    cout <<"[Child] ready to execvp\n";
-       		if(execvp(arg[process_index][0],arg[process_index])==-1){ // execvp fail
-   				cout <<"Unknown command: ["<<arg[process_index][0]<<"].\n";
-       			exit(10);
-       		}	
-		}else if(fork_pid >0){ //Parent	
-   			cout <<"[Parent] child's pid:"<< fork_pid <<"\n" ;
-			cout <<"[Parent] ready to wait child\n";
-			child_done_pid = wait(&child_done_status);	
-			cout <<"[Parent] had waited child_pid,status:"<<child_done_pid<<" "<<child_done_status<<"\n";
-		}	
-	}	
+	// Now we are going to create the pipe.
+	int mPipe[2][2];
+	
+	if(process_count ==2){
+		pipe(mPipe[0]);
+		
+		if((fork_pid[0]=fork()) == -1){
+			cout <<"Multiprocess(...)-process_count=2 : fork error\n";
+		}else if(fork_pid[0] ==0){ //child1
+			// Child1 need to modify the stdout
+			close(mPipe[0][0]);
+			dup2(mPipe[0][1],STDOUT_FILENO);
+			close(mPipe[0][1]);
+		
+			// Ready to execvp
+			if(execvp(arg[0][0],arg[0]) == -1){ // execvp fail (maybe bug)
+				cerr <<"Unknown command: ["<<arg[0][0]<<"].\n";
+				exit(0);
+			}
+
+		}else if(fork_pid[0] >0) { //Parent
+			if( (fork_pid[1]=fork()) ==-1){
+				cout <<"Multiprocess(...)-process_count=2 : fork error2\n";
+			}else if(fork_pid[1] ==0){ //child2
+				close(mPipe[0][1]);
+				dup2(mPipe[0][0],STDIN_FILENO);
+				close(mPipe[0][0]);
+				
+				//Ready to execvp
+				if(execvp(arg[1][0],arg[1]) == -1){
+					cerr <<"Unknown command: ["<<arg[1][0]<<"].\n";
+					exit(0);
+				}
+
+			}else if(fork_pid[1] >0){ //parent
+				close(mPipe[0][0]);
+				close(mPipe[0][1]);
+				wait(NULL);
+				wait(NULL);
+			} 	
+		}
+	}else if(process_count >2){
+	
+	}
+
 }
 
 // three built-in commands(setenv,printenv,exit)
