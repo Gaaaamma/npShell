@@ -135,7 +135,8 @@ void multiProcess(vector<string> commandVec,int process_count){
 	// All argument of process is handled.
 	// Now we are going to create the pipe.
 	int mPipe[2][2];
-	
+	process_index =0 ;
+
 	if(process_count ==2){
 		pipe(mPipe[0]);
 		
@@ -174,10 +175,87 @@ void multiProcess(vector<string> commandVec,int process_count){
 				wait(NULL);
 			} 	
 		}
-	}else if(process_count >2){
-	
-	}
 
+	}else if(process_count >2){
+		process_index=0;
+		pipe(mPipe[0]);
+		
+		if((fork_pid[0]=fork()) == -1){
+			cout <<"Multiprocess(...)-process_count>2 : fork error\n";
+		}else if(fork_pid[0] ==0){ //child1
+			// Child1 need to modify the stdout
+			close(mPipe[0][0]);
+			dup2(mPipe[0][1],STDOUT_FILENO);
+			close(mPipe[0][1]);
+		
+			// Ready to execvp
+			if(execvp(arg[process_index][0],arg[process_index]) == -1){
+				cerr <<"Unknown command: ["<<arg[process_index][0]<<"].\n";
+				exit(0);
+			}
+
+		}else if(fork_pid[0] >0) { //Parent
+			process_index++;
+			// need to regist signal for the first child
+			signal(SIGCHLD,SIG_IGN);
+
+			// Handle Process 2,3,4,5,....,n-1 in the middle.
+			for(int i=1;i<process_count-1;i++){
+				pipe(mPipe[process_index%2]);
+
+				if( (fork_pid[process_index%2]=fork()) ==-1){
+					cout <<"Multiprocess-process_count>2: fork error:"<<process_index<<"\n";
+				}else if(fork_pid[process_index%2] ==0){ //child
+					close(mPipe[(process_index-1)%2][1]); //close front write.
+					dup2(mPipe[(process_index-1)%2][0],STDIN_FILENO ); //dup front read to STDIN
+					close(mPipe[(process_index-1)%2][0]); //close front read.
+					
+					close(mPipe[process_index%2][0]); //close behind read
+					dup2(mPipe[process_index%2][1],STDOUT_FILENO); //dup behind write to STDOUT
+					close(mPipe[process_index%2][1]); //close behind write
+					
+					// Ready to execvp
+					if(execvp(arg[process_index][0],arg[process_index])==-1){
+						cerr <<"Unknown command: ["<<arg[process_index][0] <<"].\n";
+						exit(0);
+					}	
+
+				}else if(fork_pid[process_index%2] >0){ //Parent
+					// Close front pipe .
+					close(mPipe[(process_index-1)%2][0]);
+					close(mPipe[(process_index-1)%2][1]);
+					
+					// Maybe need to regist signal for each child in the middle.
+					signal(SIGCHLD,SIG_IGN);
+				}
+				process_index++ ;
+			}
+			
+			// Handle Process n which is the last one in process.
+			pid_t last_process ;
+			if((last_process=fork())==-1){ //
+				cout <<"last process fork error:"<<process_index<<"\n";
+			}else if(last_process ==0){ //child
+				close(mPipe[(process_index-1)%2][1]); //close front write
+				dup2(mPipe[(process_index-1)%2][0],STDIN_FILENO); //dup front read to STDIN
+				close(mPipe[(process_index-1)%2][0]); // close front read
+				
+				//Ready to execvp
+				if(execvp(arg[process_index][0],arg[process_index])){
+					cerr <<"Unknown command: ["<< arg[process_index][0] <<"].\n";
+					exit(0);
+				}
+
+			}else if(last_process >0){ //Parent
+				// Close front pipe.
+				close(mPipe[(process_index-1)%2][0]);
+				close(mPipe[(process_index-1)%2][1]);
+				// Last process we can use wait -> SHELL will stop here
+				// Until the last process done
+				waitpid(last_process,NULL,0);		
+			}
+		}
+	}			
 }
 
 // three built-in commands(setenv,printenv,exit)
