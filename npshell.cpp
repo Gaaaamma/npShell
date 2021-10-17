@@ -10,6 +10,8 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #define MAX_LENGTH 15000
 using namespace std;
@@ -53,6 +55,7 @@ int main(int argc, char *argv[]) {
 			// Ready to handle the command. 
 
 			// We want to know how much process need to call fork()
+			// And check if there is number pipe -> flag on.
       		int process_count =1 ;
       		for(int i=0;i<commandVec.size();i++){
         		if(commandVec[i].find("|")!= string::npos){ //Really find '|' in this element
@@ -86,18 +89,50 @@ int main(int argc, char *argv[]) {
 void singleProcess(vector<string> commandVec){
 	pid_t child_done_pid;
 	int child_done_status;
+	bool needRedirection =false;
+	string redirectionFileName ="";
+	char* arg[MAX_LENGTH];
+	
 	// If number pipe is expired, we need to handle it.
 	// ...
-	
+
+	// Check if there is redirection request.
+	for(int i=0;i<commandVec.size();i++){
+		if(commandVec[i].find(">")!= string::npos){
+			// There is a ">" in command
+			// Now we check if there is a file name after ">"
+			if((i+1)<commandVec.size()){
+				needRedirection = true ;
+				redirectionFileName = commandVec[i+1] ;
+				break;
+			}else{
+				cerr << "syntax error near unexpected token\n";
+				return;
+			}
+		}
+	}
+
 	pid_t fork_pid = fork();
 	if(fork_pid ==-1){ //fork Error
   		cout <<"fork error\n" ;
     }else if(fork_pid ==0){ // Child
    		// handle execvp argument
-       	char* arg[MAX_LENGTH] ;
         for(int i=0;i<commandVec.size();i++){
-        	arg[i] = strdup(commandVec[i].c_str());
-      	}	
+			if(commandVec[i].find(">")==string::npos){
+        		arg[i] = strdup(commandVec[i].c_str());
+			}else{
+				//Find ">" : we abort it.
+				break ;
+			}
+      	}
+
+		//if need to redirection -> reset the STDOUT to a file
+		if(needRedirection){
+			int fd = open(redirectionFileName.c_str(), O_WRONLY|O_CREAT|O_TRUNC ,S_IRUSR|S_IWUSR);
+			dup2(fd,STDOUT_FILENO);
+			close(fd);
+		}
+
    		// Ready to execvp
        	if(execvp(arg[0],arg)==-1){ // execvp fail
    			cerr <<"Unknown command: ["<<arg[0]<<"].\n";
@@ -116,8 +151,11 @@ void multiProcess(vector<string> commandVec,int process_count){
 	pid_t child_done_pid;
 	pid_t fork_pid[2];
 	int child_done_status;
+	bool needRedirection =false ;
+	string redirectionFileName = "" ;
 	char* arg[process_count][256]={NULL} ;
-
+	
+	// Handle argument and file redirection setting.
 	for(int cmd_index=0; cmd_index<commandVec.size() ; cmd_index++){
 		if( commandVec[cmd_index].find("|")!= string::npos){ //Find | in this string
 			if(commandVec[cmd_index].length() ==1){
@@ -127,6 +165,15 @@ void multiProcess(vector<string> commandVec,int process_count){
 			}else{
 				// Number pipe.
 			}
+		}else if(commandVec[cmd_index].find(">")!= string::npos){ //Find > in this string
+			if((cmd_index+1) < commandVec.size()){ 
+				needRedirection = true ;
+				redirectionFileName = commandVec[cmd_index+1];
+				break ;
+			}else{
+				cerr << "syntax error near unexpected token\n";
+				return ;
+			}		
 		}else{
 			arg[process_index][process_cmd_index] = strdup(commandVec[cmd_index].c_str());
 			process_cmd_index ++ ;
@@ -161,6 +208,12 @@ void multiProcess(vector<string> commandVec,int process_count){
 				close(mPipe[0][1]);
 				dup2(mPipe[0][0],STDIN_FILENO);
 				close(mPipe[0][0]);
+
+				if(needRedirection){
+     				int fd = open(redirectionFileName.c_str(),O_WRONLY|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR);
+     				dup2(fd,STDOUT_FILENO);
+     				close(fd);
+				}
 				
 				//Ready to execvp
 				if(execvp(arg[1][0],arg[1]) == -1){
@@ -240,6 +293,12 @@ void multiProcess(vector<string> commandVec,int process_count){
 				dup2(mPipe[(process_index-1)%2][0],STDIN_FILENO); //dup front read to STDIN
 				close(mPipe[(process_index-1)%2][0]); // close front read
 				
+				if(needRedirection){
+     				int fd = open(redirectionFileName.c_str(),O_WRONLY|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR);
+     				dup2(fd,STDOUT_FILENO);
+     				close(fd);
+				}
+
 				//Ready to execvp
 				if(execvp(arg[process_index][0],arg[process_index])){
 					cerr <<"Unknown command: ["<< arg[process_index][0] <<"].\n";
