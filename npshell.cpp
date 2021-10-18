@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#define PET_SIZE 1000
 #define MAX_LENGTH 15000
 using namespace std;
 
@@ -20,6 +21,13 @@ void callPrintenv(string envVar);
 void callSetenv(string envVar,string value);
 void singleProcess(vector<string>commandVec);
 void multiProcess(vector<string>commandVec,int process_count);
+
+void PET_init(int pipe_expired_table[PET_SIZE]);
+void PET_iterate(int pipe_expired_table[PET_SIZE]); 
+int PET_findExpired(int pipe_expired_table[PET_SIZE]);
+int PET_findSameLine(int pipe_expired_table[PET_SIZE],int target_line);
+int PET_emptyPipeIndex(int pipe_expired_table[PET_SIZE]);
+vector<int> PET_existPipe(int pipe_expired_table[PET_SIZE]);
 
 int main(int argc, char *argv[]) {
 	string input ="" ; 
@@ -29,7 +37,10 @@ int main(int argc, char *argv[]) {
 	int child_done_status ;
 	pid_t child_done_pid ;
 	pid_t fork_pid ;
- 
+ 	int pipe_expired_table[PET_SIZE];
+
+	// Pipe expired table initialization.
+
 	// set $PATH to bin/ ./ initially
 	callSetenv("PATH","bin:.");
 	cout <<"% ";  
@@ -90,13 +101,13 @@ void singleProcess(vector<string> commandVec){
 	pid_t child_done_pid;
 	int child_done_status;
 	bool needRedirection =false;
+	bool hasNumberPipe =false;
 	string redirectionFileName ="";
 	char* arg[MAX_LENGTH];
-	
-	// If number pipe is expired, we need to handle it.
-	// ...
 
-	// Check if there is redirection request.
+	// If number pipe expired -> remember to handle it.
+
+	// Check if there is redirection request or number Pipe
 	for(int i=0;i<commandVec.size();i++){
 		if(commandVec[i].find(">")!= string::npos){
 			// There is a ">" in command
@@ -109,6 +120,9 @@ void singleProcess(vector<string> commandVec){
 				cerr << "syntax error near unexpected token\n";
 				return;
 			}
+		}else if(commandVec[i].find("|")!=string::npos && commandVec[i].length() > 1){
+			// There is number pipe command in this line
+			// extract 
 		}
 	}
 
@@ -315,6 +329,66 @@ void multiProcess(vector<string> commandVec,int process_count){
 			}
 		}
 	}			
+}
+
+// Number pipe function.
+void PET_init(int pipe_expired_table[PET_SIZE]){
+	for(int i=0;i<PET_SIZE;i++){
+		pipe_expired_table[i] = -1 ;
+	}
+}
+
+void PET_iterate(int pipe_expired_table[PET_SIZE]){
+	for(int i=0;i<PET_SIZE;i++){
+		if(pipe_expired_table[i]!=-1){
+			pipe_expired_table[i] = pipe_expired_table[i]-1;
+		}		
+	}
+}
+
+int PET_findExpired(int pipe_expired_table[PET_SIZE]){
+	int result = -1;
+	for(int i=0;i<PET_SIZE;i++){
+		if(pipe_expired_table[i]==0){
+			result =i;
+			break ;
+		}	
+	}
+	return result ;
+}
+
+
+int PET_findSameLine(int pipe_expired_table[PET_SIZE],int target_line){
+	int result = -1;
+	for(int i=0;i<PET_SIZE;i++){
+		if(pipe_expired_table[i]==target_line){
+			result = i;
+			break ;
+		}			
+	}
+	return result;
+}
+
+int PET_emptyPipeIndex(int pipe_expired_table[PET_SIZE]){
+	int result = -1;
+	
+	for(int i=0;i<PET_SIZE;i++){
+		if(pipe_expired_table[i]==-1){
+			result = i;
+			break ;
+		}
+	}
+	return result ;
+}
+
+vector<int> PET_existPipe(int pipe_expired_table[PET_SIZE]){
+	vector<int> result ;
+	for(int i=0;i<PET_SIZE;i++){
+		if(pipe_expired_table[i]!= 0 && pipe_expired_table[i]!= -1){ // Except empty:-1 ,expired:0
+			result.push_back(i);
+		}
+	}
+	return result ;
 }
 
 // three built-in commands(setenv,printenv,exit)
