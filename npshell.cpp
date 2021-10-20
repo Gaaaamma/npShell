@@ -19,7 +19,7 @@ using namespace std;
 
 void callPrintenv(string envVar);
 void callSetenv(string envVar,string value);
-void singleProcess(vector<string>commandVec,bool hasNumberPipe,int pipeAfterLine,int numberPipe[PET_SIZE][2],int pipe_expired_table[PET_SIZE]);
+void singleProcess(vector<string>commandVec,bool hasNumberPipe,bool bothStderr,int pipeAfterLine,int numberPipe[PET_SIZE][2],int pipe_expired_table[PET_SIZE]);
 void multiProcess(vector<string>commandVec,int process_count);
 
 void PET_init(int pipe_expired_table[PET_SIZE]);
@@ -41,6 +41,7 @@ int main(int argc, char *argv[]) {
  	int numberPipe[PET_SIZE][2];
 	int pipe_expired_table[PET_SIZE];
 	bool hasNumberPipe = false;
+	bool bothStderr = false;
 	int pipeAfterLine =0 ;
 
 	// Pipe expired table initialization.
@@ -53,6 +54,7 @@ int main(int argc, char *argv[]) {
 	while(getline(cin,input)){
 		// Flag initialization
 		hasNumberPipe = false;
+		bothStderr = false;
 		pipeAfterLine =0 ;
 
 		ss << input ;
@@ -91,13 +93,17 @@ int main(int argc, char *argv[]) {
 						hasNumberPipe = true ;
 						pipeAfterLine = stoi(commandVec[i].substr(1));
           			}
-        		}
-      		} 
+        		}else if(commandVec[i].find("!")!= string::npos){//find '!' in this element
+      				hasNumberPipe = true;
+					bothStderr = true;
+					pipeAfterLine = stoi(commandVec[i].substr(1)) ;
+				}
+			} 
 			
 			// Now we have the number of processes 
 			// we can start to construct the pipe.
 			if(process_count ==1){
-				singleProcess(commandVec,hasNumberPipe,pipeAfterLine,numberPipe,pipe_expired_table);	
+				singleProcess(commandVec,hasNumberPipe,bothStderr,pipeAfterLine,numberPipe,pipe_expired_table);	
 			}else if(process_count>=2){
 				multiProcess(commandVec,process_count);				
 			}		
@@ -113,7 +119,7 @@ int main(int argc, char *argv[]) {
 	return 0;
 }
 // Single process handle 
-void singleProcess(vector<string> commandVec,bool hasNumberPipe,int pipeAfterLine,int numberPipe[PET_SIZE][2],int pipe_expired_table[PET_SIZE]){
+void singleProcess(vector<string> commandVec,bool hasNumberPipe,bool bothStderr,int pipeAfterLine,int numberPipe[PET_SIZE][2],int pipe_expired_table[PET_SIZE]){
 	pid_t child_done_pid;
 	int child_done_status;
 	bool needRedirection =false;
@@ -161,7 +167,7 @@ void singleProcess(vector<string> commandVec,bool hasNumberPipe,int pipeAfterLin
     }else if(fork_pid ==0){ // Child
    		// handle execvp argument
         for(int i=0;i<commandVec.size();i++){
-			if(commandVec[i].find(">")==string::npos && commandVec[i].find("|")==string::npos){
+			if(commandVec[i].find(">")==string::npos && commandVec[i].find("|")==string::npos && commandVec[i].find("!")==string::npos){
         		arg[i] = strdup(commandVec[i].c_str());
 			}else{
 				//Find ">" or Find "|" : we abort it.
@@ -182,10 +188,16 @@ void singleProcess(vector<string> commandVec,bool hasNumberPipe,int pipeAfterLin
 				// Use the new Pipe.
 				close(numberPipe[newNumberPipeIndex][0]); //close read
 				dup2(numberPipe[newNumberPipeIndex][1],STDOUT_FILENO); //dup write to STDOUT_FILENO
+				if(bothStderr == true){
+					dup2(numberPipe[newNumberPipeIndex][1],STDERR_FILENO);
+				}
 				close(numberPipe[newNumberPipeIndex][1]); //close write
 			}else{
 				// Write to the old pipe.
 				dup2(numberPipe[pipeToSameLine][1],STDOUT_FILENO);
+				if(bothStderr == true ){
+					dup2(numberPipe[pipeToSameLine][1],STDERR_FILENO);
+				}
 			}
 		}
 	
