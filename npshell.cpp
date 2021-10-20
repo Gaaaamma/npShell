@@ -444,6 +444,8 @@ void multiProcess(vector<string>commandVec,int process_count,bool hasNumberPipe,
 
 				if( (fork_pid[process_index%2]=fork()) ==-1){
 					// might handle it
+					i=i-1;
+					process_index--;
 				}else if(fork_pid[process_index%2] ==0){ //child
 					close(mPipe[(process_index-1)%2][1]); //close front write.
 					dup2(mPipe[(process_index-1)%2][0],STDIN_FILENO ); //dup front read to STDIN
