@@ -19,7 +19,7 @@ using namespace std;
 
 void callPrintenv(string envVar);
 void callSetenv(string envVar,string value);
-void singleProcess(vector<string>commandVec);
+void singleProcess(vector<string>commandVec,bool hasNumberPipe,int pipeAfterLine,int numberPipe[PET_SIZE][2],int pipe_expired_table[PET_SIZE]);
 void multiProcess(vector<string>commandVec,int process_count);
 
 void PET_init(int pipe_expired_table[PET_SIZE]);
@@ -37,19 +37,33 @@ int main(int argc, char *argv[]) {
 	int child_done_status ;
 	pid_t child_done_pid ;
 	pid_t fork_pid ;
- 	int pipe_expired_table[PET_SIZE];
+ 
+ 	int numberPipe[PET_SIZE][2];
+	int pipe_expired_table[PET_SIZE];
+	bool hasNumberPipe = false;
+	int pipeAfterLine =0 ;
 
 	// Pipe expired table initialization.
+	PET_init(pipe_expired_table);
 
 	// set $PATH to bin/ ./ initially
 	callSetenv("PATH","bin:.");
 	cout <<"% ";  
  
 	while(getline(cin,input)){
+		// Flag initialization
+		hasNumberPipe = false;
+		pipeAfterLine =0 ;
+
 		ss << input ;
     	while (ss >> aWord) {
 			commandVec.push_back(aWord);
 		}
+		// each round except for empty command  -> PET_iterate() 
+		if(commandVec.size()!=0){
+			PET_iterate(pipe_expired_table);
+		}
+
 		// We want to check if the command is the three built-in command
 		if(commandVec.size()!=0 && commandVec[0]=="exit"){
 			break ;
@@ -73,7 +87,9 @@ int main(int argc, char *argv[]) {
           			if(commandVec[i].length()==1){ // '|' Pipe only
             			process_count ++ ;
           			}else{ // it is number pipe
-						// ... not yet develop.             
+						// hasNumberPipe flag on and set the pipeAfterLine
+						hasNumberPipe = true ;
+						pipeAfterLine = stoi(commandVec[i].substr(1));
           			}
         		}
       		} 
@@ -81,7 +97,7 @@ int main(int argc, char *argv[]) {
 			// Now we have the number of processes 
 			// we can start to construct the pipe.
 			if(process_count ==1){
-				singleProcess(commandVec);	
+				singleProcess(commandVec,hasNumberPipe,pipeAfterLine,numberPipe,pipe_expired_table);	
 			}else if(process_count>=2){
 				multiProcess(commandVec,process_count);				
 			}		
@@ -97,17 +113,20 @@ int main(int argc, char *argv[]) {
 	return 0;
 }
 // Single process handle 
-void singleProcess(vector<string> commandVec){
+void singleProcess(vector<string> commandVec,bool hasNumberPipe,int pipeAfterLine,int numberPipe[PET_SIZE][2],int pipe_expired_table[PET_SIZE]){
 	pid_t child_done_pid;
 	int child_done_status;
 	bool needRedirection =false;
-	bool hasNumberPipe =false;
 	string redirectionFileName ="";
 	char* arg[MAX_LENGTH];
 
 	// If number pipe expired -> remember to handle it.
-
-	// Check if there is redirection request or number Pipe
+	int newNumberPipeIndex;
+	int pipeToSameLine;
+	int expiredIndex = PET_findExpired(pipe_expired_table);	
+	vector<int> existPipeIndex = PET_existPipe(pipe_expired_table); 
+	
+	// Check if there is redirection command
 	for(int i=0;i<commandVec.size();i++){
 		if(commandVec[i].find(">")!= string::npos){
 			// There is a ">" in command
@@ -120,31 +139,67 @@ void singleProcess(vector<string> commandVec){
 				cerr << "syntax error near unexpected token\n";
 				return;
 			}
-		}else if(commandVec[i].find("|")!=string::npos && commandVec[i].length() > 1){
-			// There is number pipe command in this line
-			// extract 
 		}
 	}
+	
+	// If this command need to number pipe
+	// First check if there is any pipe want to write to the same line
+	// If No -> create the pipe and set expired_table
+	if(hasNumberPipe == true){
+		pipeToSameLine = PET_findSameLine(pipe_expired_table,pipeAfterLine);
+		if(pipeToSameLine == -1){ // there isn't any  pipe want to write to the same line.	
+			newNumberPipeIndex = PET_emptyPipeIndex(pipe_expired_table);
+			pipe(numberPipe[newNumberPipeIndex]);
+			pipe_expired_table[newNumberPipeIndex] = pipeAfterLine ;
+		}
+	}	
 
 	pid_t fork_pid = fork();
+
 	if(fork_pid ==-1){ //fork Error
   		cout <<"fork error\n" ;
     }else if(fork_pid ==0){ // Child
    		// handle execvp argument
         for(int i=0;i<commandVec.size();i++){
-			if(commandVec[i].find(">")==string::npos){
+			if(commandVec[i].find(">")==string::npos && commandVec[i].find("|")==string::npos){
         		arg[i] = strdup(commandVec[i].c_str());
 			}else{
-				//Find ">" : we abort it.
+				//Find ">" or Find "|" : we abort it.
 				break ;
 			}
       	}
-
+		//if there is number pipe expired
+		if(expiredIndex != -1){
+			// set pipe to STDIN and close the pipe
+			close(numberPipe[expiredIndex][1]);
+			dup2(numberPipe[expiredIndex][0],STDIN_FILENO);
+			close(numberPipe[expiredIndex][0]);
+		}		
+			
+		//if this child need to number pipe to another line
+		if(hasNumberPipe==true){
+			if(pipeToSameLine == -1){
+				// Use the new Pipe.
+				close(numberPipe[newNumberPipeIndex][0]); //close read
+				dup2(numberPipe[newNumberPipeIndex][1],STDOUT_FILENO); //dup write to STDOUT_FILENO
+				close(numberPipe[newNumberPipeIndex][1]); //close write
+			}else{
+				// Write to the old pipe.
+				dup2(numberPipe[pipeToSameLine][1],STDOUT_FILENO);
+			}
+		}
+	
 		//if need to redirection -> reset the STDOUT to a file
 		if(needRedirection){
 			int fd = open(redirectionFileName.c_str(), O_WRONLY|O_CREAT|O_TRUNC ,S_IRUSR|S_IWUSR);
 			dup2(fd,STDOUT_FILENO);
 			close(fd);
+		}
+		
+		//Before execvp -> Child closes the useless number  pipe
+		for(int i=0;i<existPipeIndex.size();i++){
+			close(numberPipe[existPipeIndex[i]][0]);
+			close(numberPipe[existPipeIndex[i]][1]);
 		}
 
    		// Ready to execvp
@@ -153,7 +208,20 @@ void singleProcess(vector<string> commandVec){
        		exit(10);
         }	
 	}else if(fork_pid >0){ //Parent
-		child_done_pid = wait(&child_done_status);	
+		// Parent need tidy expired number pipe
+		if(expiredIndex != -1){
+			close(numberPipe[expiredIndex][0]);
+			close(numberPipe[expiredIndex][1]);
+		}
+
+		// If this command has number Pipe
+		// Parent doesn't need to wait child DONE.
+		// otherwise need to wait.
+		if(hasNumberPipe == true){
+			signal(SIGCHLD,SIG_IGN);
+		}else{
+			waitpid(fork_pid,NULL,0);
+		}
 	}
 
 }
