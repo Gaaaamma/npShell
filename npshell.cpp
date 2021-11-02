@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
 			if(commandVec.size()==3){
 				callSetenv(commandVec[1],commandVec[2]);    
 			}
-		}else{
+		}else if(commandVec.size()!=0){ // The last condition is not empty.
 			// Not the three built-in command
 			// Ready to handle the command. 
 
